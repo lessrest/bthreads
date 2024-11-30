@@ -4,6 +4,8 @@ A TypeScript implementation of behavioral programming that adds support for
 interruptible async operations, built on the
 [Effection](https://frontside.com/effection/) structured concurrency library.
 
+![bthreads-logo](bthreads.webp)
+
 ## What are Behavioral Threads?
 
 Behavioral threads (b-threads) are a programming model introduced by David

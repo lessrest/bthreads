@@ -195,10 +195,19 @@ function* schedule<Event>(
   const selectedEvent = [...threads]
     .sort((a, b) => b.prio - a.prio)
     .flatMap((x) => x.sync.post)
-    .find((x) => ![...threads].some((y) => y.sync.halt(x)))
+    .find(
+      (x) =>
+        ![...threads].some((y) => {
+          const halted = y.sync.halt(x)
+          if (halted) {
+            console.debug(x, "halted by", y.name)
+          }
+          return halted
+        })
+    )
 
   if (selectedEvent) {
-    console.debug(`Selected event: ${selectedEvent}`)
+    console.debug(`Selected event`, selectedEvent)
     // Advance threads affected by selected event
     for (const thread of threads) {
       const { post, wait, exec } = thread.sync
@@ -218,6 +227,8 @@ function* schedule<Event>(
       }
     }
     didWork = true
+  } else {
+    console.debug("No event selected")
   }
 
   return didWork
@@ -303,10 +314,17 @@ export function* behavioralThreadSystem<Event, V = void>(
           }
         }
 
-        if (activeThreads.size === 0 && pendingThreads.size === 0) {
+        if (pendingThreads.size === 0) {
           console.debug("No more active or pending threads")
           break
         }
+
+        console.log(
+          Deno.inspect(
+            { activeThreads, pendingThreads },
+            { depth: 10, colors: true }
+          )
+        )
 
         console.debug("Checking for notifications")
 

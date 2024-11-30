@@ -176,3 +176,7 @@ principles:
   JavaScript
 - [Behavioral Programming](https://www.wisdom.weizmann.ac.il/~harel/papers/Behavioral%20Programming.pdf):
   Original paper by David Harel et al.
+
+## License
+
+MIT license, you're welcome.

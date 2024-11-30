@@ -29,6 +29,10 @@ class GameState {
     [null, null, null],
   ]
 
+  getBoard(): Array<Array<"X" | "O" | null>> {
+    return this.board
+  }
+
   makeMove(move: Move) {
     if (this.isValidMove(move.position)) {
       this.board[move.position.row][move.position.col] = move.type
@@ -73,6 +77,28 @@ class GameState {
   isFull(): boolean {
     return this.board.every((row) => row.every((cell) => cell !== null))
   }
+}
+
+function renderBoard(board: Array<Array<"X" | "O" | null>>) {
+  const symbols = {
+    X: "X",
+    O: "O",
+    null: " ",
+  }
+
+  console.log("\n╔═══╦═══╦═══╗")
+  for (let row = 0; row < 3; row++) {
+    let line = "║ "
+    for (let col = 0; col < 3; col++) {
+      line += symbols[board[row][col] ?? "null"] + " ║ "
+    }
+    console.log(line)
+    if (row < 2) {
+      console.log("╠═══╬═══╬═══╣")
+    }
+  }
+  console.log("╚═══╩═══╩═══╝")
+  console.log() // Empty line after board
 }
 
 export function* createTicTacToeGame(thread: any, sync: any) {
@@ -220,6 +246,23 @@ export function* createTicTacToeGame(thread: any, sync: any) {
           O(2, 1),
         ],
       })
+    }
+  })
+
+  yield* thread("BoardRenderer", function* (): Generator<
+    Sync<GameEvent>,
+    void,
+    GameEvent
+  > {
+    while (true) {
+      const event = yield sync({
+        wait: (e: GameEvent) => e.type === "MOVE",
+      })
+
+      if (event.type === "MOVE") {
+        // We can safely access gameState here since it's in the same closure
+        renderBoard(gameState.getBoard())
+      }
     }
   })
 }

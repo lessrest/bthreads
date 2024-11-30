@@ -62,7 +62,7 @@ export interface SyncOptions<Event> {
 /**
  * Creates a new sync point specification
  */
-export function sync<Event>({
+export function makeSyncSpec<Event>({
   post = [],
   wait = () => false,
   halt = () => false,
@@ -108,7 +108,7 @@ function createEmptyThread<Event>(name: string): Thread<Event> {
   return {
     name,
     proc: (function* () {})(),
-    sync: sync({}),
+    sync: makeSyncSpec({}),
     prio: 0,
   }
 }
@@ -236,15 +236,15 @@ function* schedule<Event>(
  * 4. Supports async operations that can be interrupted by events
  *
  */
-export function* system<Event, V = void>(
+export function* behavioralThreadSystem<Event, V = void>(
   body: (
-    thread: {
+    addBehavioralThread: {
       (
         name: string,
         behavior: () => Generator<Sync<Event>, void, Event>
       ): Operation<void>
     },
-    $: typeof sync<Event>
+    sync: typeof makeSyncSpec<Event>
   ) => Operation<V>
 ): Operation<V> {
   console.debug("Starting behavioral thread system")
@@ -269,7 +269,7 @@ export function* system<Event, V = void>(
     pendingThreads.add(thread)
     yield* heyThereIsANewPendingThread.send()
   },
-  sync)
+  makeSyncSpec)
 
   let activeThreads = new Set<Thread<Event>>()
 

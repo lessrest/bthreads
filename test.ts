@@ -1,4 +1,4 @@
-import { system } from "./bthreads.ts"
+import { behavioralThreadSystem } from "./bthreads.ts"
 
 import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts"
 import { run } from "effection"
@@ -13,7 +13,7 @@ Deno.test({
   fn: async () => {
     const events: string[] = []
     await run(() =>
-      system<string>(function* (thread, sync) {
+      behavioralThreadSystem<string>(function* (thread, sync) {
         yield* thread("producer", function* () {
           yield sync({ post: ["event1"] })
           console.log("posted event1")

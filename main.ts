@@ -1,9 +1,9 @@
-import { system } from "./bthreads.ts"
+import { behavioralThreadSystem } from "./bthreads.ts"
 import { main, sleep } from "effection"
 
 async function example() {
   await main(() =>
-    system(function* (thread, sync) {
+    behavioralThreadSystem(function* (thread, sync) {
       // Worker thread with timeout
       yield* thread("worker", function* () {
         const result = yield sync({

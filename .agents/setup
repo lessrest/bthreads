@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly DENO_VERSION="2.9.5"
+readonly DENO_INSTALL_DIR="$HOME/.deno"
+
+started_at=$SECONDS
+echo "[setup] Ensuring Deno $DENO_VERSION is installed"
+
+installed_version=""
+if [[ -x "$DENO_INSTALL_DIR/bin/deno" ]]; then
+  installed_version="$("$DENO_INSTALL_DIR/bin/deno" --version | awk 'NR == 1 { print $2 }')"
+fi
+
+if [[ "$installed_version" != "$DENO_VERSION" ]]; then
+  curl -fsSL https://deno.land/install.sh | DENO_INSTALL="$DENO_INSTALL_DIR" sh -s "v$DENO_VERSION"
+fi
+
+mkdir -p "$HOME/.local/bin"
+ln -sfn "$DENO_INSTALL_DIR/bin/deno" "$HOME/.local/bin/deno"
+export PATH="$HOME/.local/bin:$PATH"
+
+echo "[setup] Caching locked dependencies"
+deno cache --frozen bthreads.ts main.ts test.ts tictactoe.ts tictactoe_test.ts
+
+echo "[setup] Complete in $((SECONDS - started_at))s"

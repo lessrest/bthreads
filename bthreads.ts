@@ -253,6 +253,7 @@ export function* behavioralThreadSystem<Event, V = void>(
       (
         name: string,
         behavior: () => Generator<Sync<Event>, void, Event>,
+        prio?: number,
       ): Operation<void>
     },
     sync: typeof makeSyncSpec<Event>,
@@ -271,9 +272,10 @@ export function* behavioralThreadSystem<Event, V = void>(
   const result = yield* body(function* (
     name: string,
     behavior: () => Generator<Sync<Event>, void, Event>,
+    prio?: number,
   ) {
     console.debug(`Creating new thread: ${name}`)
-    const thread = makeThread({ name, behavior })
+    const thread = makeThread({ name, behavior, prio })
     yield* startThreadOperationIfNecessary(
       thread,
       heyThereIsANewPendingThread,

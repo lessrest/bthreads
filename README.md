@@ -108,6 +108,17 @@ await main(() =>
 
 ## Common Patterns
 
+### Priorities
+
+Pass an optional priority as the third argument when creating a thread. Higher
+priority threads have their requested events considered first. The default
+priority is `1`.
+
+```typescript
+yield * thread("normal", normalBehavior, 1)
+yield * thread("urgent", urgentBehavior, 10)
+```
+
 ### Timeouts/Deadlines
 
 ```typescript

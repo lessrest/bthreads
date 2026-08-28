@@ -110,3 +110,30 @@ Deno.test({
     )
   },
 })
+
+Deno.test({
+  name: "higher priority threads post first",
+  ...TEST_OPTIONS,
+  fn: async () => {
+    const events: string[] = []
+
+    await run(() =>
+      behavioralThreadSystem<string>(function* (thread, sync) {
+        yield* thread("low priority", function* () {
+          yield sync({ post: ["low"] })
+        }, 1)
+
+        yield* thread("high priority", function* () {
+          yield sync({ post: ["high"] })
+        }, 10)
+
+        yield* thread("consumer", function* () {
+          events.push(yield sync({ wait: () => true }))
+          events.push(yield sync({ wait: () => true }))
+        })
+      })
+    )
+
+    assertEquals(events, ["high", "low"])
+  },
+})

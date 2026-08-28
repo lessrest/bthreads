@@ -56,6 +56,39 @@ synchronization, enabling patterns like:
 - Operations that can be interrupted by user actions
 - Multi-stage operations with pause/resume
 
+### `exec` Semantics
+
+An `exec` operation is a delayed event request owned by its current sync
+point:
+
+1. The operation starts when the b-thread reaches the sync point.
+2. If it succeeds, its return value is added to that sync point's `post`
+   requests and participates in normal blocking and priority selection.
+3. If an event requested by or matched by `wait` is selected first, the
+   operation is halted and its Effection cleanup completes before the b-thread
+   advances.
+4. If it fails, the error is thrown at the b-thread's `yield sync(...)`, where
+   it can be caught or allowed to fail the system. That failure leaves the
+   sync point and abandons its pending ordinary posts.
+
+A sync point may contain both `post` and `exec`. Its ordinary posts are
+available immediately, while the eventual `exec` result joins them without
+retracting them. The first event that advances the b-thread ends that sync
+point.
+
+Priorities order events that are available in the same scheduler turn. They do
+not preempt running operations or cause the scheduler to wait for a preferred
+operation. To interrupt an operation when another b-thread wins, include the
+winner event in the losing thread's `wait` predicate.
+
+The system owns the lifetime of both the operation and its suspended b-thread.
+Effection finalizers in `exec` run on interruption or system shutdown, and
+suspended b-thread generators are closed when the system quiesces, fails, or
+is halted. Asynchronous resource management belongs inside `exec`; b-thread
+generator `finally` blocks must remain synchronous. Teardown failures
+propagate after cleanup has been attempted for every sibling operation and
+b-thread.
+
 ## Usage
 
 ```typescript
@@ -167,6 +200,18 @@ if (/* not paused */) {
 }
 ```
 
+## Examples
+
+- [`speculative_search.ts`](speculative_search.ts) races search workers,
+  blocks an unacceptable fast result, and cancels the outstanding hedge when
+  an acceptable candidate wins.
+- [`autocomplete.ts`](autocomplete.ts) models an external input source and
+  uses a scripted pair of queries to show a newer query interrupting a stale
+  request.
+
+Both examples use explicit coordination rather than elapsed-time assertions;
+their corresponding `_test.ts` files are executable demonstrations.
+
 ## Design Philosophy
 
 This library aims to maintain the simplicity and power of behavioral
@@ -175,7 +220,7 @@ principles:
 
 1. **Clean Integration**: Async operations feel like a natural extension of
    b-thread synchronization
-2. **Predictable Timing**: Operations only run after sync conditions are met
+2. **Predictable Timing**: Operations start when their sync point is reached
 3. **Reliable Cleanup**: Uses structured concurrency for robust resource
    management
 4. **Simple Mental Model**: Async ops are just another way threads can

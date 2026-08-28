@@ -10,7 +10,23 @@ import {
   Result,
   spawn,
   Task,
+  unbox,
 } from "effection"
+
+function* captureResult<T>(
+  operation: () => Operation<T>,
+): Operation<Result<T>> {
+  try {
+    return { ok: true, value: yield* operation() }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error
+        ? error
+        : new Error(String(error), { cause: error }),
+    }
+  }
+}
 
 /**
  * The state of an executable operation in a thread
@@ -19,6 +35,7 @@ export type Exec<Event> =
   | { state: "none" }
   | { state: "pending"; op: () => Operation<Event> }
   | { state: "running"; task: Task<void> }
+  | { state: "halting"; task: Task<void> }
   | { state: "done"; result: Result<Event> }
 
 /**
@@ -130,8 +147,11 @@ function* startThreadOperationIfNecessary<Event>(
         const x = yield* operation()
         markExecutionAsDone(x)
       } catch (e: unknown) {
-        console.error("Thread operation error", thread.name, e)
-        markExecutionAsFailed(e)
+        if (thread.sync.exec.state === "halting") {
+          throw e
+        } else {
+          markExecutionAsFailed(e)
+        }
       } finally {
         yield* completionChannel.send()
       }
@@ -160,6 +180,24 @@ function* startThreadOperationIfNecessary<Event>(
 }
 
 /**
+ * Halts a running operation and waits for all of its structured cleanup.
+ * Errors raised while unwinding the operation are teardown failures and must
+ * propagate instead of being delivered to the b-thread as ordinary exec
+ * failures.
+ */
+function* haltThreadOperation<Event>(thread: Thread<Event>): Operation<void> {
+  if (thread.sync.exec.state !== "running") return
+
+  const task = thread.sync.exec.task
+  thread.sync.exec = { state: "halting", task }
+  try {
+    yield* task.halt()
+  } finally {
+    thread.sync.exec = { state: "none" }
+  }
+}
+
+/**
  * Core scheduling function that:
  * 1. Processes completed operations, turning their results into posts
  * 2. Selects the highest priority non-blocked requested event
@@ -177,7 +215,9 @@ function* schedule<Event>(
       const { result } = thread.sync.exec
       if (result.ok) {
         thread.sync.exec = { state: "none" }
-        thread.sync.post = [result.value]
+        // An exec result is a delayed request from the current sync point. It
+        // joins, rather than replaces, requests that were already pending.
+        thread.sync.post = [...thread.sync.post, result.value]
       } else {
         const { done, value: sync } = thread.proc.throw(result.error)
         if (done) {
@@ -214,8 +254,7 @@ function* schedule<Event>(
       const { post, wait, exec } = thread.sync
       if (post.includes(selectedEvent) || wait(selectedEvent)) {
         if (exec.state === "running") {
-          yield* exec.task.halt()
-          thread.sync.exec = { state: "none" }
+          yield* haltThreadOperation(thread)
         }
 
         const { done, value } = thread.proc.next(selectedEvent)
@@ -267,83 +306,142 @@ export function* behavioralThreadSystem<Event, V = void>(
 
   // Set of threads that will be started
   const pendingThreads = new Set<Thread<Event>>()
-
-  // Run the body with thread factory
-  const result = yield* body(function* (
-    name: string,
-    behavior: () => Generator<Sync<Event>, void, Event>,
-    prio?: number,
-  ) {
-    console.debug(`Creating new thread: ${name}`)
-    const thread = makeThread({ name, behavior, prio })
-    yield* startThreadOperationIfNecessary(
-      thread,
-      heyThereIsANewPendingThread,
-    )
-    pendingThreads.add(thread)
-    yield* heyThereIsANewPendingThread.send()
-  }, makeSyncSpec)
-
   let activeThreads = new Set<Thread<Event>>()
+  let outcome: Result<V> | undefined
 
-  // Main scheduling loop
   try {
-    yield* call(function* () {
-      console.debug("Starting scheduler")
-      for (;;) {
-        // Incorporate any new threads
-        if (pendingThreads.size > 0) {
-          console.debug(
-            `Adding ${pendingThreads.size} new threads to active set`,
-          )
-          activeThreads = new Set([...activeThreads, ...pendingThreads])
-          pendingThreads.clear()
-        }
+    outcome = yield* captureResult(function* () {
+      // Run the body with thread factory
+      const result = yield* body(function* (
+        name: string,
+        behavior: () => Generator<Sync<Event>, void, Event>,
+        prio?: number,
+      ) {
+        console.debug(`Creating new thread: ${name}`)
+        const thread = makeThread({ name, behavior, prio })
+        yield* startThreadOperationIfNecessary(
+          thread,
+          heyThereIsANewPendingThread,
+        )
+        pendingThreads.add(thread)
+        yield* heyThereIsANewPendingThread.send()
+      }, makeSyncSpec)
 
-        // Process until no more work to do
+      // Main scheduling loop
+      yield* call(function* () {
+        console.debug("Starting scheduler")
         for (;;) {
-          console.debug(
-            `Processing schedule iteration with ${activeThreads.size} active threads`,
+          // Incorporate any new threads
+          if (pendingThreads.size > 0) {
+            console.debug(
+              `Adding ${pendingThreads.size} new threads to active set`,
+            )
+            activeThreads = new Set([...activeThreads, ...pendingThreads])
+            pendingThreads.clear()
+          }
+
+          // Process until no more work to do
+          for (;;) {
+            console.debug(
+              `Processing schedule iteration with ${activeThreads.size} active threads`,
+            )
+            if (
+              false ===
+                (yield* schedule(activeThreads, heyThereIsANewPendingThread))
+            ) {
+              console.debug(
+                "No more work to do in current schedule iteration",
+              )
+              break
+            }
+          }
+
+          if (pendingThreads.size > 0) {
+            continue
+          }
+
+          const hasRunningOperations = [...activeThreads].some(
+            (thread) => thread.sync.exec.state === "running",
           )
-          if (
-            false ===
-              (yield* schedule(activeThreads, heyThereIsANewPendingThread))
-          ) {
-            console.debug("No more work to do in current schedule iteration")
+
+          if (!hasRunningOperations) {
+            console.debug("No more active or pending work")
             break
           }
+
+          console.debug("Checking for notifications")
+
+          // Check if we're done
+          const notificationsResult = yield* pendingThreadNotifications.next()
+          if (notificationsResult.done) {
+            console.debug("Notification channel closed")
+            break
+          } else {
+            console.debug("Notification received")
+          }
         }
+        console.debug("Scheduler complete, sending completion notification")
+      })
 
-        if (pendingThreads.size > 0) {
-          continue
-        }
-
-        const hasRunningOperations = [...activeThreads].some(
-          (thread) => thread.sync.exec.state === "running",
-        )
-
-        if (!hasRunningOperations) {
-          console.debug("No more active or pending work")
-          break
-        }
-
-        console.debug("Checking for notifications")
-
-        // Check if we're done
-        const notificationsResult = yield* pendingThreadNotifications.next()
-        if (notificationsResult.done) {
-          console.debug("Notification channel closed")
-          break
-        } else {
-          console.debug("Notification received")
-        }
-      }
-      console.debug("Scheduler complete, sending completion notification")
+      return result
     })
   } finally {
     console.debug("Cleaning up scheduler")
+
+    const remainingThreads = new Set([...activeThreads, ...pendingThreads])
+    const cleanupErrors: Error[] = []
+
+    for (const thread of remainingThreads) {
+      if (thread.sync.exec.state === "running") {
+        const result = yield* captureResult(() => haltThreadOperation(thread))
+        if (!result.ok) cleanupErrors.push(result.error)
+      }
+    }
+
+    for (const thread of remainingThreads) {
+      try {
+        const result = thread.proc.return()
+        if (!result.done) {
+          cleanupErrors.push(
+            new Error(
+              `B-thread "${thread.name}" yielded during synchronous cleanup`,
+            ),
+          )
+          // A second return forces the generator past the yielded cleanup
+          // value. Async cleanup belongs in exec, where it can be awaited.
+          thread.proc.return()
+        }
+      } catch (error) {
+        cleanupErrors.push(
+          error instanceof Error
+            ? error
+            : new Error(String(error), { cause: error }),
+        )
+      }
+    }
+
+    const closeResult = yield* captureResult(() =>
+      heyThereIsANewPendingThread.close()
+    )
+    if (!closeResult.ok) cleanupErrors.push(closeResult.error)
+
+    if (cleanupErrors.length > 0) {
+      if (outcome && !outcome.ok) {
+        throw new AggregateError(
+          [outcome.error, ...cleanupErrors],
+          "Behavioral thread system and cleanup failed",
+          { cause: outcome.error },
+        )
+      } else if (cleanupErrors.length === 1) {
+        throw cleanupErrors[0]
+      } else {
+        throw new AggregateError(
+          cleanupErrors,
+          "Behavioral thread system cleanup failed",
+        )
+      }
+    }
   }
 
-  yield* heyThereIsANewPendingThread.close()
-  return result
+  return unbox(outcome!)
 }

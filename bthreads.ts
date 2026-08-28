@@ -192,21 +192,22 @@ function* schedule<Event>(
   }
 
   // Select next event
-  const selectedEvent = [...threads]
+  const selected = [...threads]
     .sort((a, b) => b.prio - a.prio)
-    .flatMap((x) => x.sync.post)
+    .flatMap((thread) => thread.sync.post.map((event) => ({ event })))
     .find(
-      (x) =>
+      ({ event }) =>
         ![...threads].some((y) => {
-          const halted = y.sync.halt(x)
+          const halted = y.sync.halt(event)
           if (halted) {
-            console.debug(x, "halted by", y.name)
+            console.debug(event, "halted by", y.name)
           }
           return halted
         }),
     )
 
-  if (selectedEvent) {
+  if (selected) {
+    const { event: selectedEvent } = selected
     console.debug(`Selected event`, selectedEvent)
     // Advance threads affected by selected event
     for (const thread of threads) {

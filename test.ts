@@ -63,3 +63,30 @@ Deno.test({
     assertEquals(events, [42])
   },
 })
+
+Deno.test({
+  name: "falsy events can be selected",
+  ...TEST_OPTIONS,
+  fn: async () => {
+    const events: unknown[] = []
+    const expected = [0, false, "", undefined]
+
+    await run(() =>
+      behavioralThreadSystem<unknown>(function* (thread, sync) {
+        yield* thread("producer", function* () {
+          for (const event of expected) {
+            yield sync({ post: [event] })
+          }
+        })
+
+        yield* thread("consumer", function* () {
+          for (let i = 0; i < expected.length; i++) {
+            events.push(yield sync({ wait: () => true }))
+          }
+        })
+      })
+    )
+
+    assertEquals(events, expected)
+  },
+})

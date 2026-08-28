@@ -1,4 +1,5 @@
-import { Sync } from "./bthreads.ts"
+import { makeSyncSpec, Sync } from "./bthreads.ts"
+import { Operation } from "effection"
 
 // Types for our game events
 export type Position = { row: number; col: number }
@@ -61,15 +62,17 @@ class GameState {
       this.board[0][0] === player &&
       this.board[1][1] === player &&
       this.board[2][2] === player
-    )
+    ) {
       return true
+    }
 
     if (
       this.board[0][2] === player &&
       this.board[1][1] === player &&
       this.board[2][0] === player
-    )
+    ) {
       return true
+    }
 
     return false
   }
@@ -101,7 +104,13 @@ function renderBoard(board: Array<Array<"X" | "O" | null>>) {
   console.log() // Empty line after board
 }
 
-export function* createTicTacToeGame(thread: any, sync: any) {
+export function* createTicTacToeGame(
+  thread: (
+    name: string,
+    behavior: () => Generator<Sync<GameEvent>, void, GameEvent>,
+  ) => Operation<void>,
+  sync: typeof makeSyncSpec<GameEvent>,
+) {
   const gameState = new GameState()
 
   // Enforce turns

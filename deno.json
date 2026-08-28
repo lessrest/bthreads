@@ -2,8 +2,14 @@
   "tasks": {
     "dev": "deno run --watch main.ts"
   },
+  "fmt": {
+    "lineWidth": 78,
+    "semiColons": false,
+    "singleQuote": false,
+    "proseWrap": "always"
+  },
   "imports": {
-    "@std/assert": "jsr:@std/assert@1",
-    "effection": "npm:effection"
+    "@std/assert": "jsr:@std/assert@1.0.19",
+    "effection": "npm:effection@4.1.0"
   }
 }

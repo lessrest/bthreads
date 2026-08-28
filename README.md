@@ -59,7 +59,7 @@ synchronization, enabling patterns like:
 ## Usage
 
 ```typescript
-import { system, sync, main } from "behavioral-threads"
+import { main, sync, system } from "behavioral-threads"
 
 await main(() =>
   system(function* (thread, sync) {

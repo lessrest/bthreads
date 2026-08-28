@@ -3,14 +3,14 @@
  * using Effection for structured concurrency.
  */
 import {
-  Operation,
-  Task,
+  call,
   Channel,
+  createChannel,
+  Operation,
   Result,
   spawn,
-  createChannel,
-  call,
-} from "npm:effection"
+  Task,
+} from "effection"
 
 /**
  * The state of an executable operation in a thread
@@ -121,7 +121,7 @@ function createEmptyThread<Event>(name: string): Thread<Event> {
  */
 function* startThreadOperationIfNecessary<Event>(
   thread: Thread<Event>,
-  completionChannel: Channel<void, void>
+  completionChannel: Channel<void, void>,
 ) {
   if (thread.sync.exec.state === "pending") {
     const operation = thread.sync.exec.op
@@ -167,7 +167,7 @@ function* startThreadOperationIfNecessary<Event>(
  */
 function* schedule<Event>(
   threads: Set<Thread<Event>>,
-  notify: Channel<void, void>
+  notify: Channel<void, void>,
 ): Operation<boolean> {
   let didWork = false
 
@@ -203,7 +203,7 @@ function* schedule<Event>(
             console.debug(x, "halted by", y.name)
           }
           return halted
-        })
+        }),
     )
 
   if (selectedEvent) {
@@ -245,18 +245,17 @@ function* schedule<Event>(
  *    - The system selects a non-blocked requested event
  *    - Affected threads advance and may start new operations
  * 4. Supports async operations that can be interrupted by events
- *
  */
 export function* behavioralThreadSystem<Event, V = void>(
   body: (
     addBehavioralThread: {
       (
         name: string,
-        behavior: () => Generator<Sync<Event>, void, Event>
+        behavior: () => Generator<Sync<Event>, void, Event>,
       ): Operation<void>
     },
-    sync: typeof makeSyncSpec<Event>
-  ) => Operation<V>
+    sync: typeof makeSyncSpec<Event>,
+  ) => Operation<V>,
 ): Operation<V> {
   console.debug("Starting behavioral thread system")
 
@@ -269,18 +268,17 @@ export function* behavioralThreadSystem<Event, V = void>(
   // Run the body with thread factory
   const result = yield* body(function* (
     name: string,
-    behavior: () => Generator<Sync<Event>, void, Event>
+    behavior: () => Generator<Sync<Event>, void, Event>,
   ) {
     console.debug(`Creating new thread: ${name}`)
     const thread = makeThread({ name, behavior })
     yield* startThreadOperationIfNecessary(
       thread,
-      heyThereIsANewPendingThread
+      heyThereIsANewPendingThread,
     )
     pendingThreads.add(thread)
     yield* heyThereIsANewPendingThread.send()
-  },
-  makeSyncSpec)
+  }, makeSyncSpec)
 
   let activeThreads = new Set<Thread<Event>>()
 
@@ -292,7 +290,7 @@ export function* behavioralThreadSystem<Event, V = void>(
         // Incorporate any new threads
         if (pendingThreads.size > 0) {
           console.debug(
-            `Adding ${pendingThreads.size} new threads to active set`
+            `Adding ${pendingThreads.size} new threads to active set`,
           )
           activeThreads = new Set([...activeThreads, ...pendingThreads])
           pendingThreads.clear()
@@ -303,11 +301,11 @@ export function* behavioralThreadSystem<Event, V = void>(
         // Process until no more work to do
         for (;;) {
           console.debug(
-            `Processing schedule iteration with ${activeThreads.size} active threads`
+            `Processing schedule iteration with ${activeThreads.size} active threads`,
           )
           if (
             false ===
-            (yield* schedule(activeThreads, heyThereIsANewPendingThread))
+              (yield* schedule(activeThreads, heyThereIsANewPendingThread))
           ) {
             console.debug("No more work to do in current schedule iteration")
             break
@@ -322,8 +320,8 @@ export function* behavioralThreadSystem<Event, V = void>(
         console.log(
           Deno.inspect(
             { activeThreads, pendingThreads },
-            { depth: 10, colors: true }
-          )
+            { depth: 10, colors: true },
+          ),
         )
 
         console.debug("Checking for notifications")

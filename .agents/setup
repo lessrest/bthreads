@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly DENO_VERSION="2.9.5"
+readonly DENO_VERSION="2.9.6"
 readonly DENO_INSTALL_DIR="$HOME/.deno"
 
 started_at=$SECONDS

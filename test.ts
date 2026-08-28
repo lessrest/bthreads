@@ -1,6 +1,6 @@
 import { behavioralThreadSystem } from "./bthreads.ts"
 
-import { assertEquals } from "@std/assert"
+import { assertEquals, assertRejects } from "@std/assert"
 import { run, sleep } from "effection"
 
 const TEST_OPTIONS = {
@@ -88,5 +88,25 @@ Deno.test({
     )
 
     assertEquals(events, expected)
+  },
+})
+
+Deno.test({
+  name: "behavior errors reject the system operation",
+  ...TEST_OPTIONS,
+  fn: async () => {
+    await assertRejects(
+      () =>
+        run(() =>
+          behavioralThreadSystem<string>(function* (thread, sync) {
+            yield* thread("failing thread", function* () {
+              yield sync({ post: ["event"] })
+              throw new Error("behavior failed")
+            })
+          })
+        ),
+      Error,
+      "behavior failed",
+    )
   },
 })

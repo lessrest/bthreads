@@ -338,8 +338,6 @@ export function* behavioralThreadSystem<Event, V = void>(
       }
       console.debug("Scheduler complete, sending completion notification")
     })
-  } catch (e) {
-    console.error("Scheduler error", e)
   } finally {
     console.debug("Cleaning up scheduler")
   }

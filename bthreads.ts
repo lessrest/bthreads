@@ -261,6 +261,7 @@ export function* behavioralThreadSystem<Event, V = void>(
 
   // This channel is used to notify the scheduler that a new thread has been created
   const heyThereIsANewPendingThread = createChannel<void>()
+  const pendingThreadNotifications = yield* heyThereIsANewPendingThread
 
   // Set of threads that will be started
   const pendingThreads = new Set<Thread<Event>>()
@@ -296,8 +297,6 @@ export function* behavioralThreadSystem<Event, V = void>(
           pendingThreads.clear()
         }
 
-        const pendingThreadNotifications = yield* heyThereIsANewPendingThread
-
         // Process until no more work to do
         for (;;) {
           console.debug(
@@ -312,17 +311,18 @@ export function* behavioralThreadSystem<Event, V = void>(
           }
         }
 
-        if (pendingThreads.size === 0) {
-          console.debug("No more active or pending threads")
-          break
+        if (pendingThreads.size > 0) {
+          continue
         }
 
-        console.log(
-          Deno.inspect(
-            { activeThreads, pendingThreads },
-            { depth: 10, colors: true },
-          ),
+        const hasRunningOperations = [...activeThreads].some(
+          (thread) => thread.sync.exec.state === "running",
         )
+
+        if (!hasRunningOperations) {
+          console.debug("No more active or pending work")
+          break
+        }
 
         console.debug("Checking for notifications")
 

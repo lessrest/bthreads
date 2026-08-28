@@ -1,7 +1,7 @@
 import { behavioralThreadSystem } from "./bthreads.ts"
 
 import { assertEquals } from "@std/assert"
-import { run } from "effection"
+import { run, sleep } from "effection"
 
 const TEST_OPTIONS = {
   timeout: 5000,
@@ -37,5 +37,29 @@ Deno.test({
     console.log(events)
 
     assertEquals(events, ["received event1", "received event2"])
+  },
+})
+
+Deno.test({
+  name: "async operation completion is scheduled as an event",
+  ...TEST_OPTIONS,
+  fn: async () => {
+    const events: number[] = []
+
+    await run(() =>
+      behavioralThreadSystem<number>(function* (thread, sync) {
+        yield* thread("async producer", function* () {
+          const event = yield sync({
+            exec: function* () {
+              yield* sleep(1)
+              return 42
+            },
+          })
+          events.push(event)
+        })
+      })
+    )
+
+    assertEquals(events, [42])
   },
 })
